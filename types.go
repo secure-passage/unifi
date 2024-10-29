@@ -116,8 +116,10 @@ func init() {
 	})
 }
 
-var ErrCannotUnmarshalFlexInt = fmt.Errorf("cannot unmarshal to FlexInt")
-var ErrCannotUnmarshalFlexString = fmt.Errorf("cannot unmarshal to FlexString")
+var (
+	ErrCannotUnmarshalFlexInt    = fmt.Errorf("cannot unmarshal to FlexInt")
+	ErrCannotUnmarshalFlexString = fmt.Errorf("cannot unmarshal to FlexString")
+)
 
 // This is a list of unifi API paths.
 // The %s in each string must be replaced with a Site.Name.
@@ -153,7 +155,7 @@ const (
 	// APIEventPathAlarms contains the site alarms.
 	APIEventPathAlarms string = "/api/s/%s/list/alarm"
 	// APIPrefixNew is the prefix added to the new API paths; except login. duh.
-	APIPrefixNew string = "/proxy/network"
+	APIPrefixNew string = "/proxy/protect"
 	// APIAnomaliesPath returns site anomalies.
 	APIAnomaliesPath string = "/api/s/%s/stat/anomalies"
 	APICommandPath   string = "/api/s/%s/cmd"
