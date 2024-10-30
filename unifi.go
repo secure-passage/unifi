@@ -19,6 +19,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -431,7 +432,7 @@ func (u *Unifi) GetCameraByID(value string) (*Camera, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("Camera with id %s not found", value)
+	return nil, fmt.Errorf("Camera with id \"%s\" not found", value)
 }
 
 // Acutally retreived by "displayName", in testing "name" was not always present (null value) while "displayName" always was. If it was present they were always identitcal.
@@ -447,10 +448,13 @@ func (u *Unifi) GetCameraByName(value string) (*Camera, error) {
 		}
 	}
 
-	return nil, fmt.Errorf("Camera with id %s not found", value)
+	return nil, fmt.Errorf("Camera with id \"%s\" not found", value)
 }
 
-func (u *Unifi) GetClip(cameraID string, start, end time.Time) ([]byte, error) {
+// Prepare and download a clip from the specified camera for the time window. In testing, the prepare API can be overloaded
+// and will start throwing 500 errors. Another major error yet to be understood relates to the length of the clip, sometimes
+// the clip is either shorter or longer than the specified time.
+func (u *Unifi) GetClipBytes(cameraID string, start, end time.Time) ([]byte, error) {
 	var cameraClip = map[string]string{
 		"camera":  cameraID,
 		"start":   strconv.FormatInt(start.UnixMilli(), 10),
@@ -483,4 +487,26 @@ func (u *Unifi) GetClip(cameraID string, start, end time.Time) ([]byte, error) {
 	}
 
 	return responseDownload, nil
+}
+
+// Prepare and download a clip from the specified camera for the time window then return a temp file where it's located.
+// See GetClipBytes for more.
+func (u *Unifi) DownloadClip(cameraID string, start, end time.Time) (*os.File, error) {
+	clipBytes, err := u.GetClipBytes(cameraID, start, end)
+	if err != nil {
+		return nil, err
+	}
+
+	f, err := os.CreateTemp("", cameraID)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	_, err = f.Write(clipBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	return f, nil
 }
