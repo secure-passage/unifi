@@ -18,6 +18,7 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -55,9 +56,9 @@ func NewUnifi(config *Config) (*Unifi, error) {
 		return u, err
 	}
 
-	if _, err := u.GetServerData(); err != nil {
-		return u, fmt.Errorf("unable to get server version: %w", err)
-	}
+	// if _, err := u.GetServerData(); err != nil {
+	// 	return u, fmt.Errorf("unable to get server version: %w", err)
+	// }
 
 	return u, nil
 }
@@ -145,7 +146,7 @@ func (u *Unifi) Login() error {
 func (u *Unifi) Logout() error {
 	// a post is needed for logout
 	_, err := u.PostJSON(APILogoutPath)
-	
+
 	return err
 }
 
@@ -230,6 +231,21 @@ func (u *Unifi) GetData(apiPath string, v interface{}, params ...string) error {
 		u.URL+u.path(apiPath), time.Since(start).Round(time.Millisecond), len(body))
 
 	return json.Unmarshal(body, v)
+}
+
+// GetData makes a unifi request and unmarshals the response into a provided pointer.
+func (u *Unifi) GetRaw(apiPath string, params ...string) ([]byte, error) {
+	start := time.Now()
+
+	body, err := u.GetJSON(apiPath, params...)
+	if err != nil {
+		return nil, err
+	}
+
+	u.DebugLog("Requested %s: elapsed %v, returned %d bytes",
+		u.URL+u.path(apiPath), time.Since(start).Round(time.Millisecond), len(body))
+
+	return body, nil
 }
 
 // PutData makes a unifi request and unmarshals the response into a provided pointer.
@@ -384,4 +400,86 @@ func (u *Unifi) setHeaders(req *http.Request, params string) {
 	} else {
 		u.DebugLog("Requesting %s, with params: %v,", req.URL, params != "")
 	}
+}
+
+func (u *Unifi) GetCameras() ([]*Camera, error) {
+	start := time.Now()
+
+	var data []*Camera
+
+	err := u.GetData("/api/cameras", &data)
+	if err != nil {
+		return nil, err
+	}
+
+	u.DebugLog("Requested %s: elapsed %v",
+		u.URL+u.path("/api/cameras"), time.Since(start).Round(time.Millisecond))
+
+	return data, nil
+}
+
+func (u *Unifi) GetCameraByID(value string) (*Camera, error) {
+	cameras, err := u.GetCameras()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, camera := range cameras {
+		if camera.ID == value {
+			return camera, nil
+		}
+	}
+
+	return nil, fmt.Errorf("Camera with id %s not found", value)
+}
+
+// Acutally retreived by "displayName", in testing "name" was not always present (null value) while "displayName" always was. If it was present they were always identitcal.
+func (u *Unifi) GetCameraByName(value string) (*Camera, error) {
+	cameras, err := u.GetCameras()
+	if err != nil {
+		return nil, err
+	}
+
+	for _, camera := range cameras {
+		if camera.Name == value {
+			return camera, nil
+		}
+	}
+
+	return nil, fmt.Errorf("Camera with id %s not found", value)
+}
+
+func (u *Unifi) GetClip(cameraID string, start, end time.Time) ([]byte, error) {
+	var cameraClip = map[string]string{
+		"camera":  cameraID,
+		"start":   strconv.FormatInt(start.UnixMilli(), 10),
+		"end":     strconv.FormatInt(end.UnixMilli(), 10),
+		"channel": "0",
+		"lens":    "0",
+		"type":    "rotating",
+	}
+
+	cameraClip["filename"] = fmt.Sprintf("%s_%s-%s", cameraClip["camera"], cameraClip["start"], cameraClip["end"])
+
+	// Prepare Clip Download
+	var responsePrep interface{}
+
+	prepClipURL := fmt.Sprintf("/api/video/prepare?camera=%s&channel=%s&end=%s&filename=%s&lens=%s&start=%s&type=%s", cameraClip["camera"], cameraClip["channel"], cameraClip["end"], cameraClip["filename"], cameraClip["lens"], cameraClip["start"], cameraClip["type"])
+
+	err := u.GetData(prepClipURL, &responsePrep)
+	if err != nil {
+		return nil, err
+	}
+
+	// Download Clip
+	var responseDownload []byte
+
+	downloadClipURL := fmt.Sprintf("/api/video/download?camera=%s&filename=%s", cameraClip["camera"], cameraClip["filename"])
+
+	responseDownload, err = u.GetRaw(downloadClipURL)
+	if err != nil {
+		return nil, err
+	}
+
+	return responseDownload, nil
 }
