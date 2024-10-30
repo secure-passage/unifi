@@ -452,24 +452,24 @@ func (u *Unifi) GetCameraByName(value string) (*Camera, error) {
 }
 
 // Prepare and download a clip from the specified camera for the time window. In testing, the prepare API can be overloaded
-// and will start throwing 500 errors. Another major error yet to be understood relates to the length of the clip, sometimes
-// the clip is either shorter or longer than the specified time.
+// and will start throwing 500 errors. Two other major errors yet to be understood exist. The first relates to the length of
+// the clip, sometimes the clip is either shorter or longer than the specified time. The second has to do with requesting
+// clips from time periods too close to "now", Unifi will return 500 if this is the case.
 func (u *Unifi) GetClipBytes(cameraID string, start, end time.Time) ([]byte, error) {
-	var cameraClip = map[string]string{
-		"camera":  cameraID,
-		"start":   strconv.FormatInt(start.UnixMilli(), 10),
-		"end":     strconv.FormatInt(end.UnixMilli(), 10),
-		"channel": "0",
-		"lens":    "0",
-		"type":    "rotating",
-	}
+	var prepValues = url.Values{}
 
-	cameraClip["filename"] = fmt.Sprintf("%s_%s-%s", cameraClip["camera"], cameraClip["start"], cameraClip["end"])
+	prepValues.Set("camera", cameraID)
+	prepValues.Set("start", strconv.FormatInt(start.UnixMilli(), 10))
+	prepValues.Set("end", strconv.FormatInt(end.UnixMilli(), 10))
+	prepValues.Set("channel", "0")
+	prepValues.Set("lens", "0")
+	prepValues.Set("type", "rotating")
+	prepValues.Set("filename", fmt.Sprintf("%s_%s-%s.mp4", prepValues.Get("camera"), prepValues.Get("start"), prepValues.Get("end")))
 
 	// Prepare Clip Download
 	var responsePrep interface{}
 
-	prepClipURL := fmt.Sprintf("/api/video/prepare?camera=%s&channel=%s&end=%s&filename=%s&lens=%s&start=%s&type=%s", cameraClip["camera"], cameraClip["channel"], cameraClip["end"], cameraClip["filename"], cameraClip["lens"], cameraClip["start"], cameraClip["type"])
+	prepClipURL := "/api/video/prepare?" + prepValues.Encode()
 
 	err := u.GetData(prepClipURL, &responsePrep)
 	if err != nil {
@@ -479,7 +479,12 @@ func (u *Unifi) GetClipBytes(cameraID string, start, end time.Time) ([]byte, err
 	// Download Clip
 	var responseDownload []byte
 
-	downloadClipURL := fmt.Sprintf("/api/video/download?camera=%s&filename=%s", cameraClip["camera"], cameraClip["filename"])
+	var downloadValues = url.Values{}
+
+	downloadValues.Set("camera", prepValues.Get("camera"))
+	downloadValues.Set("filename", prepValues.Get("filename"))
+
+	downloadClipURL := "/api/video/download?" + downloadValues.Encode()
 
 	responseDownload, err = u.GetRaw(downloadClipURL)
 	if err != nil {
@@ -501,7 +506,6 @@ func (u *Unifi) DownloadClip(cameraID string, start, end time.Time) (*os.File, e
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
 
 	_, err = f.Write(clipBytes)
 	if err != nil {
