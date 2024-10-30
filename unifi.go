@@ -1,3 +1,4 @@
+// nolint: revive
 // Package unifi provides a set of types to unload (unmarshal) Ubiquiti UniFi
 // controller data. Also provided are methods to easily get data for devices -
 // things like access points and switches, and for clients - the things
