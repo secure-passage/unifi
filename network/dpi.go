@@ -1,4 +1,4 @@
-package unifi
+package network
 
 import "strconv"
 

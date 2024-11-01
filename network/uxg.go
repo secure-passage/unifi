@@ -1,4 +1,4 @@
-package unifi
+package network
 
 // UXG represents all the data from the Ubiquiti Controller for a UniFi 10Gb Gateway.
 // The UDM shares several structs/type-data with USW and USG.

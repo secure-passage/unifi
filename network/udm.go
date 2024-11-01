@@ -1,4 +1,4 @@
-package unifi
+package network
 
 // UDM represents all the data from the Ubiquiti Controller for a Unifi Dream Machine.
 // The UDM shares several structs/type-data with USW and USG.

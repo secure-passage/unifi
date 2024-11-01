@@ -1,4 +1,4 @@
-package unifi // nolint: testpackage
+package network // nolint: testpackage
 
 import (
 	"io"
@@ -19,7 +19,7 @@ func TestNewUnifi(t *testing.T) {
 		VerifySSL: false,
 		DebugLog:  discardLogs,
 	}
-	authReq, err := NewUnifi(c)
+	authReq, err := NewClient(c)
 	a.NotNil(err)
 	a.EqualValues(u, authReq.URL)
 	a.Contains(err.Error(), "connection refused", "an invalid destination should produce a connection error.")

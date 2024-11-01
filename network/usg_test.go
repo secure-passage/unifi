@@ -1,4 +1,4 @@
-package unifi // nolint: testpackage
+package network // nolint: testpackage
 
 import (
 	_ "embed"

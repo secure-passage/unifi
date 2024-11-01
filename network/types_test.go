@@ -1,4 +1,4 @@
-package unifi_test
+package network_test
 
 import (
 	"encoding/json"

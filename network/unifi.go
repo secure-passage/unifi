@@ -1,10 +1,9 @@
-// nolint: revive
 // Package unifi provides a set of types to unload (unmarshal) Ubiquiti UniFi
 // controller data. Also provided are methods to easily get data for devices -
 // things like access points and switches, and for clients - the things
 // connected to those access points and switches. As a bonus, each device and
 // client type provided has an attached method to create InfluxDB datapoints.
-package unifi
+package network
 
 import (
 	"bytes"
@@ -19,8 +18,6 @@ import (
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
-	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -37,7 +34,7 @@ var (
 // NewUnifi creates a http.Client with authenticated cookies.
 // Used to make additional, authenticated requests to the APIs.
 // Start here.
-func NewUnifi(config *Config) (*Unifi, error) {
+func NewClient(config *Config) (*Unifi, error) {
 	jar, err := cookiejar.New(&cookiejar.Options{PublicSuffixList: publicsuffix.List})
 	if err != nil {
 		return nil, fmt.Errorf("creating cookiejar: %w", err)
@@ -58,9 +55,9 @@ func NewUnifi(config *Config) (*Unifi, error) {
 		return u, err
 	}
 
-	// if _, err := u.GetServerData(); err != nil {
-	// 	return u, fmt.Errorf("unable to get server version: %w", err)
-	// }
+	if _, err := u.GetServerData(); err != nil {
+		return u, fmt.Errorf("unable to get server version: %w", err)
+	}
 
 	return u, nil
 }
@@ -235,21 +232,6 @@ func (u *Unifi) GetData(apiPath string, v interface{}, params ...string) error {
 	return json.Unmarshal(body, v)
 }
 
-// GetData makes a unifi request and unmarshals the response into a provided pointer.
-func (u *Unifi) GetRaw(apiPath string, params ...string) ([]byte, error) {
-	start := time.Now()
-
-	body, err := u.GetJSON(apiPath, params...)
-	if err != nil {
-		return nil, err
-	}
-
-	u.DebugLog("Requested %s: elapsed %v, returned %d bytes",
-		u.URL+u.path(apiPath), time.Since(start).Round(time.Millisecond), len(body))
-
-	return body, nil
-}
-
 // PutData makes a unifi request and unmarshals the response into a provided pointer.
 func (u *Unifi) PutData(apiPath string, v interface{}, params ...string) error {
 	start := time.Now()
@@ -402,115 +384,4 @@ func (u *Unifi) setHeaders(req *http.Request, params string) {
 	} else {
 		u.DebugLog("Requesting %s, with params: %v,", req.URL, params != "")
 	}
-}
-
-func (u *Unifi) GetCameras() ([]*Camera, error) {
-	start := time.Now()
-
-	var data []*Camera
-
-	err := u.GetData("/api/cameras", &data)
-	if err != nil {
-		return nil, err
-	}
-
-	u.DebugLog("Requested %s: elapsed %v",
-		u.URL+u.path("/api/cameras"), time.Since(start).Round(time.Millisecond))
-
-	return data, nil
-}
-
-func (u *Unifi) GetCameraByID(value string) (*Camera, error) {
-	cameras, err := u.GetCameras()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, camera := range cameras {
-		if camera.ID == value {
-			return camera, nil
-		}
-	}
-
-	return nil, fmt.Errorf("Camera with id \"%s\" not found", value)
-}
-
-// Acutally retreived by "displayName", in testing "name" was not always present (null value) while "displayName" always was. If it was present they were always identitcal.
-func (u *Unifi) GetCameraByName(value string) (*Camera, error) {
-	cameras, err := u.GetCameras()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, camera := range cameras {
-		if camera.Name == value {
-			return camera, nil
-		}
-	}
-
-	return nil, fmt.Errorf("Camera with id \"%s\" not found", value)
-}
-
-// Prepare and download a clip from the specified camera for the time window. In testing, the prepare API can be overloaded
-// and will start throwing 500 errors. Two other major errors yet to be understood exist. The first relates to the length of
-// the clip, sometimes the clip is either shorter or longer than the specified time. The second has to do with requesting
-// clips from time periods too close to "now", Unifi will return 500 if this is the case.
-func (u *Unifi) GetClipBytes(cameraID string, start, end time.Time) ([]byte, error) {
-	var prepValues = url.Values{}
-
-	prepValues.Set("camera", cameraID)
-	prepValues.Set("start", strconv.FormatInt(start.UnixMilli(), 10))
-	prepValues.Set("end", strconv.FormatInt(end.UnixMilli(), 10))
-	prepValues.Set("channel", "0")
-	prepValues.Set("lens", "0")
-	prepValues.Set("type", "rotating")
-	prepValues.Set("filename", fmt.Sprintf("%s_%s-%s.mp4", prepValues.Get("camera"), prepValues.Get("start"), prepValues.Get("end")))
-
-	// Prepare Clip Download
-	var responsePrep interface{}
-
-	prepClipURL := "/api/video/prepare?" + prepValues.Encode()
-
-	err := u.GetData(prepClipURL, &responsePrep)
-	if err != nil {
-		return nil, err
-	}
-
-	// Download Clip
-	var responseDownload []byte
-
-	var downloadValues = url.Values{}
-
-	downloadValues.Set("camera", prepValues.Get("camera"))
-	downloadValues.Set("filename", prepValues.Get("filename"))
-
-	downloadClipURL := "/api/video/download?" + downloadValues.Encode()
-
-	responseDownload, err = u.GetRaw(downloadClipURL)
-	if err != nil {
-		return nil, err
-	}
-
-	return responseDownload, nil
-}
-
-// Prepare and download a clip from the specified camera for the time window then return a temp file where it's located.
-// See GetClipBytes for more.
-func (u *Unifi) DownloadClip(cameraID string, start, end time.Time) (*os.File, error) {
-	clipBytes, err := u.GetClipBytes(cameraID, start, end)
-	if err != nil {
-		return nil, err
-	}
-
-	f, err := os.CreateTemp("", cameraID)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = f.Write(clipBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	return f, nil
 }
